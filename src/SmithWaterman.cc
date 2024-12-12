@@ -20,6 +20,8 @@ SmithWaterman::SmithWaterman(const std::string& query_seq_path,
   assert(target_seqs_size >= 1);
 }
 
+SmithWaterman::~SmithWaterman() {}
+
 std::vector<size_t> SmithWaterman::solve() {
   // Iterate through the query sequences
   for (auto& query_seq : query_seqs) {
@@ -62,36 +64,32 @@ void SmithWaterman::pair_align(FastaSequence& query_seq,
 
   // Store the highest score in each pairwise-alignment process.
   // Default to 0.
-  max_positions.push_back(0);
 
+  int64_t max_score = 0;
   // Pairwise-Alignment between the two sequences
-  for (int64_t i = 1; i <= query_seq_length; i++) {
-    for (int64_t j = 1; j <= target_seq_length; j++) {
-      int64_t index = pad * i + j;
-
-      // From the upper element
-      int64_t up = H[index - pad] + gap_score;
-
-      // From the left element
-      int64_t left = H[index - 1] + gap_score;
-
-      // From the upper-left element
-      int64_t upleft =
-          H[index - pad - 1] +
-          (query_seq.sequence.at(i - 1) == target_seq.sequence.at(j - 1)
-               ? match_score
-               : mismatch_score);
-
-      int64_t max = std::max({up, left, upleft, 0l});
-
-      H[index] = max;
-
-      if (max > H[max_positions.back()]) {
-        max_positions.back() = index;
+  const int64_t max_x = query_seq_length + target_seq_length;
+  for (int64_t x = 1 + 1; x <= max_x; x++) {
+    int64_t local_max = 0;
+    for(int64_t i = 1; i <= query_seq_length; i++) {
+      int64_t j = x - i;
+      if (j >= 1 && j <= target_seq_length) {
+        int64_t index = pad * i + j;
+        // From the upper element
+        const int64_t up = H[index - pad] + gap_score;
+        // From the left element
+        const int64_t left = H[index - 1] + gap_score;
+        // From the upper-left element
+        const bool match = query_seq.sequence.at(i - 1) == target_seq.sequence.at(j - 1);
+        const int64_t upleft = H[index - pad - 1] + (match ? match_score : mismatch_score);
+        int64_t max = std::max({up, left, upleft, 0l});
+        H[index] = max;
+        local_max = std::max(local_max, max);
       }
     }
+    max_score = std::max(max_score, local_max);
   }
-  max_scores.push_back(H[max_positions.back()]);
+
+  max_scores.push_back(max_score);
 }
 
 int SmithWaterman::validate(const std::string& ref_path) {
