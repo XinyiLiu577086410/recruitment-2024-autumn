@@ -18,9 +18,28 @@ SmithWaterman::SmithWaterman(const std::string& query_seq_path,
   assert(query_seqs_size >= 1);
   target_seqs_size = target_seqs.size();
   assert(target_seqs_size >= 1);
+  #pragma acc enter data copyin(this[0:1])
+  for (auto& query_seq : query_seqs) {
+    auto seq_ptr = query_seq.sequence.data();
+    #pragma acc enter data copyin(seq_ptr[:query_seq.sequence.size()])
+  }
+  for (auto& target_seq : target_seqs) {
+    auto seq_ptr = target_seq.sequence.data();
+    #pragma acc enter data copyin(seq_ptr[:target_seq.sequence.size()])
+  }
 }
 
-SmithWaterman::~SmithWaterman() {}
+SmithWaterman::~SmithWaterman() {
+  for (auto& target_seq : target_seqs) {
+    auto seq_ptr = target_seq.sequence.data();
+    #pragma acc exit data delete(seq_ptr[0:target_seq.sequence.size()])
+  }
+  for (auto& query_seq : query_seqs) {
+    auto seq_ptr = query_seq.sequence.data();
+    #pragma acc exit data delete(seq_ptr[0:query_seq.sequence.size()])
+  }
+  #pragma acc exit data delete(this[0:1])
+}
 
 std::vector<size_t> SmithWaterman::solve() {
   // Iterate through the query sequences
@@ -65,30 +84,43 @@ void SmithWaterman::pair_align(FastaSequence& query_seq,
   // Store the highest score in each pairwise-alignment process.
   // Default to 0.
 
+  auto query_sequence_ptr = query_seq.sequence.data();
+  auto target_sequence_ptr = target_seq.sequence.data();
+  auto H_ptr = H.data();
+
   int64_t max_score = 0;
-  // Pairwise-Alignment between the two sequences
-  const int64_t max_x = query_seq_length + target_seq_length;
-  for (int64_t x = 1 + 1; x <= max_x; x++) {
-    int64_t local_max = 0;
-    for(int64_t i = 1; i <= query_seq_length; i++) {
-      int64_t j = x - i;
-      if (j >= 1 && j <= target_seq_length) {
-        int64_t index = pad * i + j;
-        // From the upper element
-        const int64_t up = H[index - pad] + gap_score;
-        // From the left element
-        const int64_t left = H[index - 1] + gap_score;
-        // From the upper-left element
-        const bool match = query_seq.sequence.at(i - 1) == target_seq.sequence.at(j - 1);
-        const int64_t upleft = H[index - pad - 1] + (match ? match_score : mismatch_score);
-        int64_t max = std::max({up, left, upleft, 0l});
-        H[index] = max;
-        local_max = std::max(local_max, max);
+  #pragma acc data present(this[:1], query_sequence_ptr[:query_seq_length], target_sequence_ptr[:target_seq_length])\
+                    create(H_ptr[0:(query_seq_length + 1) * (target_seq_length + 1)]) copy(max_score)
+  {
+    #pragma acc parallel
+    {
+      // Pairwise-Alignment between the two sequences
+      const int64_t max_x = query_seq_length + target_seq_length;
+      #pragma acc loop seq
+      for (int64_t x = 1 + 1; x <= max_x; x++) {
+        int64_t local_max = -999;
+        #pragma acc loop independent reduction(max: local_max)
+        #pragma omp parallel for reduction(max: local_max)
+        for(int64_t i = 1; i <= query_seq_length; i++) {
+          const int64_t j = x - i;
+          if (j >= 1 && j <= target_seq_length) {
+            const int64_t index = pad * i + j;
+            // From the upper element
+            const int64_t up = H_ptr[index - pad] + gap_score;
+            // From the left element
+            const int64_t left = H_ptr[index - 1] + gap_score;
+            // From the upper-left element
+            const bool match  = query_sequence_ptr[i - 1] == target_sequence_ptr[j - 1];
+            const int64_t upleft = H_ptr[index - pad - 1] + (match ? match_score : mismatch_score);
+            const int64_t max = std::max({up, left, upleft, 0l});
+            H_ptr[index] = max;
+            local_max = std::max(local_max, max);
+          }
+        }
+        max_score = std::max(max_score, local_max);
       }
     }
-    max_score = std::max(max_score, local_max);
   }
-
   max_scores.push_back(max_score);
 }
 
