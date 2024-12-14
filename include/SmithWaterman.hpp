@@ -15,7 +15,7 @@ class SmithWaterman {
  public:
   SmithWaterman(const std::string& query_seq_path,
                 const std::string& target_seq_path);
-  SmithWaterman::~SmithWaterman();
+  ~SmithWaterman();
   std::vector<size_t> solve();
 
   int validate(const std::string& ref_path);

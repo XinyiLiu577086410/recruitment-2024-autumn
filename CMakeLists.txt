@@ -35,10 +35,11 @@ endif()
 
 if(USE_OPENACC)
   if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-    target_compile_options(SmithWaterman PRIVATE -O3 -acc -Minfo=acc)
-    find_package(OpenACC) # 若成功，执行cmake -B 会输出 "-- Found OpenACC_CXX: -acc"  
+    target_compile_options(SmithWaterman PRIVATE -O3 -acc=gpu,multicore -gpu=unified -Minfo=acc)
+    find_package(OpenACC)
     if(OpenACC_CXX_FOUND)
-      target_link_libraries(SmithWaterman OpenACC::OpenACC_CXX) # 否则无法正确链接acc的一系列库
+      target_link_libraries(SmithWaterman OpenACC::OpenACC_CXX)
+      target_link_libraries(SmithWaterman -gpu=unified)
     endif()
   endif()
 endif()
