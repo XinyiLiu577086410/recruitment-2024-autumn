@@ -65,6 +65,7 @@ void SmithWaterman::pair_align(FastaSequence& query_seq,
   // Store the highest score in each pairwise-alignment process.
   // Default to 0.
   int64_t max_score = 0;
+  int64_t local_max = 0;
 
   #pragma acc parallel 
   {
@@ -72,7 +73,7 @@ void SmithWaterman::pair_align(FastaSequence& query_seq,
     const int64_t max_x = query_seq_length + target_seq_length;
     #pragma acc loop seq reduction(max: max_score)
     for (int64_t x = 1 + 1; x <= max_x; x++) {
-      int64_t local_max = 0;
+      local_max = 0;
       #pragma omp parallel for reduction(max: local_max)
       #pragma acc loop independent reduction(max: local_max)
       for(int64_t i = 1; i <= query_seq_length; i++) {
